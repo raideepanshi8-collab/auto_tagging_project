@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Semantix AI Dashboard</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: Arial;
+      background: radial-gradient(circle at top, #111827, #0b0f1a);
+      color: white;
+      margin: 0;
+    }
+
+    .navbar {
+      display: flex;
+      justify-content: space-between;
+      padding: 15px 40px;
+      background: #0b0f1a;
+    }
+
+    .logo {
+      color: #00ff99;
+      font-weight: bold;
+    }
+
+    .logout {
+      background: red;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    h1 {
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .container {
+      padding: 20px 40px;
+    }
+
+    .drop-box {
+      border: 2px dashed #00ff99;
+      padding: 40px;
+      width: 320px;
+      margin: auto;
+      border-radius: 12px;
+    }
+
+    button {
+      padding: 10px;
+      margin: 10px;
+      background: #00ff99;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 30px;
+    }
+
+    .card {
+      background: #1c2235;
+      padding: 20px;
+      border-radius: 12px;
+    }
+
+    .highlight-box {
+      border-left: 4px solid #00ff99;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 5px 10px;
+      margin: 5px;
+      background: rgba(0,255,153,0.1);
+      border: 1px solid #00ff99;
+      border-radius: 20px;
+      color: #00ff99;
+    }
+
+    /* 🔥 GRAPH LAYOUT FIXED */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 30px;
+      margin-top: 40px;
+    }
+
+    canvas {
+      background: #1c2235;
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    #barChart { height: 300px !important; }
+    #pieChart { height: 260px !important; }
+    #lineChart {
+      width: 60%;
+      margin: 30px auto;
+      height: 200px !important;
+    }
+
+  </style>
+</head>
+
+<body>
+
+<div class="navbar">
+  <div class="logo">Semantix AI</div>
+  <div class="logout" onclick="logout()">Logout</div>
+</div>
+
+<h1>📊 Research Paper Analysis Dashboard</h1>
+
+<div class="container">
+
+  <div class="drop-box" id="dropBox">Drag & Drop PDF</div>
+
+  <input type="file" id="file">
+  <button onclick="uploadFile()">Upload</button>
+
+  <div id="result"></div>
+
+</div>
+
+<script>
+
+if (!localStorage.getItem("loggedIn")) {
+  alert("Login first");
+  window.location.href = "auth.html";
+}
+
+function logout() {
+  localStorage.removeItem("loggedIn");
+  window.location.href = "auth.html";
+}
+
+async function uploadFile() {
+
+  const file = document.getElementById("file").files[0];
+
+  if (!file) {
+    alert("Select file");
+    return;
+  }
+
+  document.getElementById("result").innerHTML = "⏳ Processing...";
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch("http://127.0.0.1:5000/upload", {
+    method: "POST",
+    body: formData
+  });
+
+  const data = await res.json();
+
+  const colors = [
+    "#ff6b6b","#6bcB77","#4d96ff","#f7b801",
+    "#9d4edd","#00c2ff","#ff9f1c","#2ec4b6"
+  ];
+
+  document.getElementById("result").innerHTML = `
+
+  <div class="grid">
+
+    <div class="card"><b>📄 File</b><br>${data.file}</div>
+    <div class="card"><b>📂 Domain</b><br>${data.domain}</div>
+
+    <div class="card">
+      <b>🔑 Keywords</b><br>
+      ${data.keywords.map(k => `<span class="badge">${k}</span>`).join("")}
+    </div>
+
+    <div class="card">
+      <b>🏷 Tags</b><br>
+      ${data.tags.map(t => `<span class="badge">${t}</span>`).join("")}
+    </div>
+
+  </div>
+
+  <div class="card">
+    <b>🤖 Insight</b><br>${data.summary}
+  </div>
+
+  <div class="card">
+    <b>📊 Confidence</b><br>${data.confidence}%
+  </div>
+
+  <!-- 🔥 COLORED KEYWORD MEANINGS -->
+  <div class="card highlight-box">
+    <b>📖 Keyword Meaning</b><br><br>
+    ${Object.entries(data.keyword_meanings || {})
+      .map(([k,v],i) => `
+        <div style="margin-bottom:10px;">
+          <span style="color:${colors[i%colors.length]}; font-weight:bold;">
+            ${k}
+          </span> ➤ ${v}
+        </div>
+      `).join("")}
+  </div>
+
+  <!-- 🔥 FIXED IMPORTANT SENTENCES -->
+  <div class="card">
+    <b>📌 Important Sentences</b><br><br>
+    ${(data.top_sentences || []).map(s => `
+      <div style="margin-bottom:10px; line-height:1.6;">
+        • ${s}
+      </div>
+    `).join("")}
+  </div>
+
+  <div class="chart-grid">
+    <canvas id="barChart"></canvas>
+    <canvas id="pieChart"></canvas>
+  </div>
+
+  <canvas id="lineChart"></canvas>
+  `;
+
+  const labels = data.common.map(x => x[0]);
+  const values = data.common.map(x => x[1]);
+
+  const ctx = document.getElementById("barChart").getContext("2d");
+
+  const gradient = ctx.createLinearGradient(0,0,0,300);
+  gradient.addColorStop(0, "#00ff99");
+  gradient.addColorStop(1, "#006644");
+
+  new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        data: values,
+        backgroundColor: gradient,
+        borderRadius: 8
+      }]
+    },
+    options: { plugins: { legend: { display: false } } }
+  });
+
+  new Chart(document.getElementById("pieChart"), {
+    type: "doughnut",
+    data: {
+      labels: labels.slice(0,5),
+      datasets: [{
+        data: values.slice(0,5),
+        backgroundColor: colors
+      }]
+    },
+    options: { cutout: "70%" }
+  });
+
+  new Chart(document.getElementById("lineChart"), {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{
+        data: values,
+        borderColor: "#00ff99",
+        tension: 0.4,
+        fill: true,
+        backgroundColor: "rgba(0,255,153,0.1)"
+      }]
+    }
+  });
+
+}
+
+</script>
+
+</body>
+</html>
